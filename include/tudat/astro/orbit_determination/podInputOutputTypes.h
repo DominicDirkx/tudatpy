@@ -39,9 +39,26 @@ public:
             const std::shared_ptr< observation_models::ObservationCollection< ObservationScalarType, TimeType > >& observationCollection,
             const Eigen::MatrixXd inverseOfAprioriCovariance = Eigen::MatrixXd::Zero( 0, 0 ),
             const Eigen::MatrixXd considerCovariance = Eigen::MatrixXd::Zero( 0, 0 ) ):
-        observationCollection_( observationCollection ), inverseOfAprioriCovariance_( inverseOfAprioriCovariance ),
-        considerCovariance_( considerCovariance ), limitConditionNumberForWarning_( 1.0E8 ), reintegrateEquationsOnFirstIteration_( true ),
-        reintegrateVariationalEquations_( true ), saveDesignMatrix_( true ), printOutput_( true )
+        observationCollection_( observationCollection ), observationDataset_( observationCollection->getObservationDataset( ) ),
+        inverseOfAprioriCovariance_( inverseOfAprioriCovariance ), considerCovariance_( considerCovariance ),
+        limitConditionNumberForWarning_( 1.0E8 ), reintegrateEquationsOnFirstIteration_( true ), reintegrateVariationalEquations_( true ),
+        saveDesignMatrix_( true ), printOutput_( true )
+    {
+        considerParametersIncluded_ = false;
+        if( considerCovariance.size( ) > 0 )
+        {
+            considerParametersIncluded_ = true;
+        }
+    }
+
+    CovarianceAnalysisInput(
+            const std::shared_ptr< observation_models::ObservationDataset< ObservationScalarType, TimeType > >& observationDataset,
+            const Eigen::MatrixXd inverseOfAprioriCovariance = Eigen::MatrixXd::Zero( 0, 0 ),
+            const Eigen::MatrixXd considerCovariance = Eigen::MatrixXd::Zero( 0, 0 ) ):
+        observationCollection_( nullptr ), observationDataset_( observationDataset ),
+        inverseOfAprioriCovariance_( inverseOfAprioriCovariance ), considerCovariance_( considerCovariance ),
+        limitConditionNumberForWarning_( 1.0E8 ), reintegrateEquationsOnFirstIteration_( true ), reintegrateVariationalEquations_( true ),
+        saveDesignMatrix_( true ), printOutput_( true )
     {
         //        weightsMatrixDiagonals_ = observationCollection->getConcatenatedWeights( );
         //        setConstantWeightsMatrix( 1.0 );
@@ -72,7 +89,7 @@ public:
      */
     void setConstantWeightsMatrix( const double constantWeight = 1.0 )
     {
-        observationCollection_->setConstantWeight( constantWeight );
+        observationDataset_->setConstantWeight( constantWeight );
     }
 
     //! Set constant scalar weight for all observables of given type
@@ -86,7 +103,7 @@ public:
                   << std::endl;
 
         std::map< observation_models::ObservableType, std::pair< int, int > > observationTypeStartAndSize =
-                observationCollection_->getObservationTypeStartAndSize( );
+                observationDataset_->getObservableTypeStartAndSize( );
         if( observationTypeStartAndSize.count( currentObservable ) == 0 )
         {
             std::cerr << "Warning when setting weights for data type " << std::to_string( currentObservable ) << ". "
@@ -94,7 +111,7 @@ public:
         }
         else
         {
-            observationCollection_->setConstantWeight( weight, observationParser( currentObservable ) );
+            observationDataset_->setConstantWeight( weight, observationParser( currentObservable ) );
         }
     }
 
@@ -110,7 +127,7 @@ public:
                   << std::endl;
 
         std::map< observation_models::ObservableType, std::pair< int, int > > observationTypeStartAndSize =
-                observationCollection_->getObservationTypeStartAndSize( );
+                observationDataset_->getObservableTypeStartAndSize( );
         if( observationTypeStartAndSize.count( currentObservable ) == 0 )
         {
             std::cerr << "Warning when setting weights for data type " << std::to_string( currentObservable ) << ". "
@@ -118,7 +135,7 @@ public:
         }
         else
         {
-            observationCollection_->setConstantWeight( weight, observationParser( currentObservable ) );
+            observationDataset_->setConstantWeight( weight, observationParser( currentObservable ) );
         }
     }
 
@@ -138,7 +155,7 @@ public:
                 observationParser( std::vector< std::shared_ptr< observation_models::ObservationCollectionParser > >(
                         { observationParser( currentObservable ), observationParser( currentLinkEnds ) } ) );
         weightsPerParser[ multiTypeParser ] = weight;
-        observationCollection_->setConstantWeightPerObservable( weightsPerParser );
+        observationDataset_->setConstantWeightPerObservable( weightsPerParser );
     }
 
     //! Set constant vector weight for all observables of given type and link ends
@@ -157,7 +174,7 @@ public:
                 observationParser( std::vector< std::shared_ptr< observation_models::ObservationCollectionParser > >(
                         { observationParser( currentObservable ), observationParser( currentLinkEnds ) } ) );
         weightsPerParser[ multiTypeParser ] = weight;
-        observationCollection_->setConstantWeightPerObservable( weightsPerParser );
+        observationDataset_->setConstantWeightPerObservable( weightsPerParser );
     }
 
     //! Set constant vector weight for all observables of given type and link ends
@@ -171,7 +188,7 @@ public:
                      "https://docs.tudat.space/en/latest/user-guide/state-estimation/observation-simulation/"
                      "observation-collection-manipulation/modifying-collections.html#setting-weights)."
                   << std::endl;
-        observationCollection_->setTabulatedWeights(
+        observationDataset_->setTabulatedWeights(
                 weight,
                 observationParser( std::vector< std::shared_ptr< observation_models::ObservationCollectionParser > >(
                         { observationParser( currentObservable ), observationParser( currentLinkEnds ) } ) ) );
@@ -196,7 +213,7 @@ public:
         {
             weightsPerObservationParser[ observationParser( observableIt.first ) ] = observableIt.second;
         }
-        observationCollection_->setConstantWeightPerObservable( weightsPerObservationParser );
+        observationDataset_->setConstantWeightPerObservable( weightsPerObservationParser );
     }
 
     void setConstantPerObservableVectorWeightsMatrix(
@@ -213,7 +230,7 @@ public:
         {
             weightsPerObservationParser[ observationParser( observableIt.first ) ] = observableIt.second;
         }
-        observationCollection_->setConstantWeightPerObservable( weightsPerObservationParser );
+        observationDataset_->setConstantWeightPerObservable( weightsPerObservationParser );
     }
 
     //! Function to set a values for observation weights, constant per observable type and link ends type
@@ -242,7 +259,7 @@ public:
                         linkEndsIt.second;
             }
         }
-        observationCollection_->setConstantWeightPerObservable( weightPerObservationParser );
+        observationDataset_->setConstantWeightPerObservable( weightPerObservationParser );
     }
 
     void setConstantPerObservableAndLinkEndsVectorWeights(
@@ -266,7 +283,7 @@ public:
                         linkEndsIt.second;
             }
         }
-        observationCollection_->setConstantWeightPerObservable( weightPerObservationParser );
+        observationDataset_->setConstantWeightPerObservable( weightPerObservationParser );
     }
 
     void setConstantPerObservableAndLinkEndsWeights( const observation_models::ObservableType observableType,
@@ -327,7 +344,7 @@ public:
                         linkEndsIt.second;
             }
         }
-        observationCollection_->setTabulatedWeights( weightPerObservableParser );
+        observationDataset_->setTabulatedWeights( weightPerObservableParser );
     }
 
     void setTabulatedPerObservableAndLinkEndsWeights( const observation_models::ObservableType observableType,
@@ -356,7 +373,17 @@ public:
      */
     std::shared_ptr< observation_models::ObservationCollection< ObservationScalarType, TimeType > > getObservationCollection( )
     {
+        if( observationCollection_ == nullptr )
+        {
+            observationCollection_ =
+                    observation_models::createObservationCollection< ObservationScalarType, TimeType >( observationDataset_ );
+        }
         return observationCollection_;
+    }
+
+    std::shared_ptr< observation_models::ObservationDataset< ObservationScalarType, TimeType > > getObservationDataset( )
+    {
+        return observationDataset_;
     }
 
     //! A priori covariance matrix (unnormalized) of estimated parameters
@@ -419,14 +446,14 @@ public:
      */
     Eigen::VectorXd getWeightsMatrixDiagonals( )
     {
-        return observationCollection_->getConcatenatedWeights( );
+        return observationDataset_->createLegacyProjection( ).getWeightVector( );
     }
 
     void setWeightsMatrixDiagonals( const Eigen::VectorXd& weightsMatrixDiagonals )
     {
         std::cerr << "Warning, function setWeightsMatrixDiagonals is deprecated, "
                      "weights should preferably be defined at the observation collection level.";
-        observationCollection_->setTabulatedWeights( weightsMatrixDiagonals );
+        observationDataset_->setTabulatedWeights( weightsMatrixDiagonals );
         //        weightsMatrixDiagonals_ = weightsMatrixDiagonals;
     }
 
@@ -492,6 +519,8 @@ public:
 protected:
     //! Total data structure of observations and associated times/link ends/type
     std::shared_ptr< observation_models::ObservationCollection< ObservationScalarType, TimeType > > observationCollection_;
+
+    std::shared_ptr< observation_models::ObservationDataset< ObservationScalarType, TimeType > > observationDataset_;
 
     //! A priori covariance matrix (unnormalized) of estimated parameters
     Eigen::MatrixXd inverseOfAprioriCovariance_;
@@ -611,6 +640,43 @@ public:
             const Eigen::VectorXd considerParametersDeviations = Eigen::VectorXd::Zero( 0 ),
             const bool applyFinalParameterCorrection = true ):
         CovarianceAnalysisInput< ObservationScalarType, TimeType >( observationCollection, inverseOfAprioriCovariance, considerCovariance ),
+        saveResidualsAndParametersFromEachIteration_( true ), saveStateHistoryForEachIteration_( false ),
+        convergenceChecker_( convergenceChecker ), considerParametersDeviations_( considerParametersDeviations ),
+        conditionNumberWarningEachIteration_( true ), applyFinalParameterCorrection_( applyFinalParameterCorrection )
+
+    {
+        if( this->areConsiderParametersIncluded( ) )
+        {
+            if( considerParametersDeviations_.size( ) > 0 )
+            {
+                if( considerCovariance.rows( ) != considerParametersDeviations_.size( ) )
+                {
+                    throw std::runtime_error(
+                            "Error when defining consider covariance and consider parameters deviations, sizes are inconsistent." );
+                }
+                std::cerr << "Warning, considerParametersDeviations are provided as input. These should contain (statistical) deviations "
+                             "with respect to the *nominal*"
+                             "consider parameters values, and not their absolute values."
+                          << "\n\n";
+            }
+        }
+        else
+        {
+            if( considerParametersDeviations_.size( ) > 0 )
+            {
+                throw std::runtime_error( "Error, non-zero consider parameters deviations, but no consider covariance provided." );
+            }
+        }
+    }
+
+    EstimationInput(
+            const std::shared_ptr< observation_models::ObservationDataset< ObservationScalarType, TimeType > >& observationDataset,
+            const Eigen::MatrixXd inverseOfAprioriCovariance = Eigen::MatrixXd::Zero( 0, 0 ),
+            const std::shared_ptr< EstimationConvergenceChecker > convergenceChecker = std::make_shared< EstimationConvergenceChecker >( ),
+            const Eigen::MatrixXd considerCovariance = Eigen::MatrixXd::Zero( 0, 0 ),
+            const Eigen::VectorXd considerParametersDeviations = Eigen::VectorXd::Zero( 0 ),
+            const bool applyFinalParameterCorrection = true ):
+        CovarianceAnalysisInput< ObservationScalarType, TimeType >( observationDataset, inverseOfAprioriCovariance, considerCovariance ),
         saveResidualsAndParametersFromEachIteration_( true ), saveStateHistoryForEachIteration_( false ),
         convergenceChecker_( convergenceChecker ), considerParametersDeviations_( considerParametersDeviations ),
         conditionNumberWarningEachIteration_( true ), applyFinalParameterCorrection_( applyFinalParameterCorrection )

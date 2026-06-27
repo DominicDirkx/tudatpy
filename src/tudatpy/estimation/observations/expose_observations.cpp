@@ -20,6 +20,7 @@
 #include <pybind11/stl.h>
 
 #include "scalarTypes.h"
+#include "tudat/simulation/estimation_setup/observationDataset.h"
 #include "tudat/simulation/estimation_setup/simulateObservations.h"
 #include "observations_processing/expose_observations_processing.h"
 #include "observations_geometry/expose_observations_geometry.h"
@@ -73,6 +74,713 @@ void expose_observations( py::module& m )
 
     auto observations_geometry = m.def_submodule( "observations_geometry" );
     observations_geometry::expose_observations_geometry( observations_geometry );
+
+    // OBSERVATION DATASET
+
+    py::class_< tom::ObservationSetMetadata< STATE_SCALAR_TYPE, TIME_TYPE > >( m,
+                                                                               "ObservationSetMetadata",
+                                                                               R"doc(
+Metadata describing one logical observation set stored in an :class:`ObservationDataset`.
+
+The metadata identifies the observable type, link definition, reference link end,
+observable size and the registered ancillary/dependent-variable layouts used by
+all observations in the set.
+)doc" )
+            .def_readonly( "observable_type",
+                           &tom::ObservationSetMetadata< STATE_SCALAR_TYPE, TIME_TYPE >::observableType_,
+                           R"doc(Observable type stored in this set.)doc" )
+            .def_readonly( "link_definition_id",
+                           &tom::ObservationSetMetadata< STATE_SCALAR_TYPE, TIME_TYPE >::linkDefinitionId_,
+                           R"doc(Index of the link definition in the dataset link-definition registry.)doc" )
+            .def_readonly( "reference_link_end",
+                           &tom::ObservationSetMetadata< STATE_SCALAR_TYPE, TIME_TYPE >::referenceLinkEnd_,
+                           R"doc(Reference link end used for all observations in this set.)doc" )
+            .def_readonly( "observable_size",
+                           &tom::ObservationSetMetadata< STATE_SCALAR_TYPE, TIME_TYPE >::observableSize_,
+                           R"doc(Number of scalar components in one observation of this set.)doc" )
+            .def_readonly( "ancillary_settings_id",
+                           &tom::ObservationSetMetadata< STATE_SCALAR_TYPE, TIME_TYPE >::ancillarySettingsId_,
+                           R"doc(Index of the ancillary settings in the dataset registry.)doc" )
+            .def_readonly( "dependent_variable_layout_id",
+                           &tom::ObservationSetMetadata< STATE_SCALAR_TYPE, TIME_TYPE >::dependentVariableLayoutId_,
+                           R"doc(Index of the dependent-variable bookkeeping layout in the dataset registry.)doc" );
+
+    py::class_< tom::ObservationDatasetRow< TIME_TYPE > >( m,
+                                                           "ObservationDatasetRow",
+                                                           R"doc(
+Row-level storage metadata for one observation inside an :class:`ObservationDataset`.
+
+Each row points to the first scalar component of the observation and records the
+observation time, owning set and index within that set.
+)doc" )
+            .def_readonly( "time", &tom::ObservationDatasetRow< TIME_TYPE >::time_, R"doc(Observation time.)doc" )
+            .def_readonly(
+                    "set_id", &tom::ObservationDatasetRow< TIME_TYPE >::setId_, R"doc(Identifier of the owning observation set.)doc" )
+            .def_readonly( "first_scalar_component",
+                           &tom::ObservationDatasetRow< TIME_TYPE >::firstScalarComponent_,
+                           R"doc(Index of the first scalar component belonging to this observation.)doc" )
+            .def_readonly( "scalar_size",
+                           &tom::ObservationDatasetRow< TIME_TYPE >::scalarSize_,
+                           R"doc(Number of scalar components in this observation.)doc" )
+            .def_readonly( "index_in_set",
+                           &tom::ObservationDatasetRow< TIME_TYPE >::indexInSet_,
+                           R"doc(Index of this observation within its observation set.)doc" )
+            .def_readonly( "is_active",
+                           &tom::ObservationDatasetRow< TIME_TYPE >::isActive_,
+                           R"doc(Boolean flag indicating whether this row is active in projections.)doc" )
+            .def_readonly( "rejection_reason",
+                           &tom::ObservationDatasetRow< TIME_TYPE >::rejectionReason_,
+                           R"doc(Optional text describing why this observation was rejected.)doc" );
+
+    py::class_< tom::ObservationScalarComponentRow >( m,
+                                                      "ObservationScalarComponentRow",
+                                                      R"doc(
+Storage metadata for one scalar component of an observation.
+
+The row records the owning observation and component index inside that
+observation.
+)doc" )
+            .def_readonly( "observation_id",
+                           &tom::ObservationScalarComponentRow::observationId_,
+                           R"doc(Identifier of the owning observation.)doc" )
+            .def_readonly( "component_index",
+                           &tom::ObservationScalarComponentRow::componentIndex_,
+                           R"doc(Component index within the owning vector-valued observation.)doc" );
+
+    py::class_< tom::ObservationWeightBlock >( m,
+                                               "ObservationWeightBlock",
+                                               R"doc(
+Advanced dense weight block over selected scalar components.
+
+This type is intended for rare off-diagonal correlations that are not naturally
+represented as per-observation weights or as a full set-level weight block.
+)doc" )
+            .def( py::init<>( ), R"doc(Create an empty observation weight block.)doc" )
+            .def_readwrite( "row_scalar_component_ids",
+                            &tom::ObservationWeightBlock::rowScalarComponentIds_,
+                            R"doc(Scalar component ids corresponding to the block rows.)doc" )
+            .def_readwrite( "column_scalar_component_ids",
+                            &tom::ObservationWeightBlock::columnScalarComponentIds_,
+                            R"doc(Scalar component ids corresponding to the block columns.)doc" )
+            .def_readwrite( "weight_block",
+                            &tom::ObservationWeightBlock::weightBlock_,
+                            R"doc(Dense weight block for the selected scalar components.)doc" );
+
+    py::class_< tom::EstimationVectorProjection< STATE_SCALAR_TYPE, TIME_TYPE > >( m,
+                                                                                   "EstimationVectorProjection",
+                                                                                   R"doc(
+Flat estimation-vector view of an :class:`ObservationDataset`.
+
+This object contains the concatenated observation, residual and weight vectors,
+together with the scalar-component provenance needed to map each entry back to a
+dataset observation row and observation set.
+)doc" )
+            .def_property_readonly( "observation_vector",
+                                    &tom::EstimationVectorProjection< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationVector,
+                                    R"doc(Concatenated vector of observed values.)doc" )
+            .def_property_readonly( "residual_vector",
+                                    &tom::EstimationVectorProjection< STATE_SCALAR_TYPE, TIME_TYPE >::getResidualVector,
+                                    R"doc(Concatenated vector of residual values.)doc" )
+            .def_property_readonly( "weight_vector",
+                                    &tom::EstimationVectorProjection< STATE_SCALAR_TYPE, TIME_TYPE >::getWeightVector,
+                                    R"doc(Concatenated vector of scalar observation weights.)doc" )
+            .def_property_readonly( "weight_matrix",
+                                    &tom::EstimationVectorProjection< STATE_SCALAR_TYPE, TIME_TYPE >::getWeightMatrix,
+                                    R"doc(Full projection weight matrix, including block/off-diagonal weights when present.)doc" )
+            .def_property_readonly( "is_diagonal_weight_only",
+                                    &tom::EstimationVectorProjection< STATE_SCALAR_TYPE, TIME_TYPE >::isDiagonalWeightOnly,
+                                    R"doc(True when the projection weight matrix contains no off-diagonal entries.)doc" )
+            .def_property_readonly( "has_off_diagonal_weights",
+                                    &tom::EstimationVectorProjection< STATE_SCALAR_TYPE, TIME_TYPE >::hasOffDiagonalWeights,
+                                    R"doc(True when the projection weight matrix contains off-diagonal entries.)doc" )
+            .def_property_readonly( "times",
+                                    &tom::EstimationVectorProjection< STATE_SCALAR_TYPE, TIME_TYPE >::getTimes,
+                                    R"doc(Observation time associated with each scalar component.)doc" )
+            .def_property_readonly( "observation_ids",
+                                    &tom::EstimationVectorProjection< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationIds,
+                                    R"doc(Observation row identifier associated with each scalar component.)doc" )
+            .def_property_readonly( "set_ids",
+                                    &tom::EstimationVectorProjection< STATE_SCALAR_TYPE, TIME_TYPE >::getSetIds,
+                                    R"doc(Observation set identifier associated with each scalar component.)doc" )
+            .def_property_readonly( "scalar_component_ids",
+                                    &tom::EstimationVectorProjection< STATE_SCALAR_TYPE, TIME_TYPE >::getScalarComponentIds,
+                                    R"doc(Scalar-component row identifier for each entry in the projection.)doc" );
+
+    py::class_< tom::ObservationCondition< STATE_SCALAR_TYPE, TIME_TYPE > >( m,
+                                                                             "ObservationCondition",
+                                                                             R"doc(
+Composable row-level condition used to select observations in an ObservationDataset.
+
+Conditions operate on individual observation rows, not complete observation
+sets. Combine conditions with ``&`` and ``|`` and negate them with ``~``.
+)doc" )
+            .def( py::init<>( ), R"doc(Create a condition that selects all observations.)doc" )
+            .def_static( "all",
+                         &tom::ObservationCondition< STATE_SCALAR_TYPE, TIME_TYPE >::all,
+                         R"doc(Return a condition that selects all observations.)doc" )
+            .def_static( "observable_type",
+                         &tom::ObservationCondition< STATE_SCALAR_TYPE, TIME_TYPE >::observableType,
+                         py::arg( "observable_type" ),
+                         R"doc(Return a condition selecting observations of one observable type.)doc" )
+            .def_static( "link_definition",
+                         &tom::ObservationCondition< STATE_SCALAR_TYPE, TIME_TYPE >::linkDefinition,
+                         py::arg( "link_definition" ),
+                         R"doc(Return a condition selecting observations with a matching link definition.)doc" )
+            .def_static( "link_end_type",
+                         &tom::ObservationCondition< STATE_SCALAR_TYPE, TIME_TYPE >::linkEndType,
+                         py::arg( "link_end_type" ),
+                         R"doc(Return a condition selecting observations whose link definition contains a link-end type.)doc" )
+            .def_static( "link_end",
+                         &tom::ObservationCondition< STATE_SCALAR_TYPE, TIME_TYPE >::linkEnd,
+                         py::arg( "link_end_type" ),
+                         py::arg( "link_end_id" ),
+                         R"doc(Return a condition selecting observations with a specific link end.)doc" )
+            .def_static( "time_bounds",
+                         &tom::ObservationCondition< STATE_SCALAR_TYPE, TIME_TYPE >::timeBounds,
+                         py::arg( "start_time" ),
+                         py::arg( "end_time" ),
+                         R"doc(Return a condition selecting rows with start_time <= observation_time <= end_time.)doc" )
+            .def_static( "active",
+                         &tom::ObservationCondition< STATE_SCALAR_TYPE, TIME_TYPE >::active,
+                         R"doc(Return a condition selecting active observations.)doc" )
+            .def_static( "rejected",
+                         &tom::ObservationCondition< STATE_SCALAR_TYPE, TIME_TYPE >::rejected,
+                         R"doc(Return a condition selecting rejected observations.)doc" )
+            .def_static( "residual_absolute_value_greater_than",
+                         &tom::ObservationCondition< STATE_SCALAR_TYPE, TIME_TYPE >::residualAbsoluteValueGreaterThan,
+                         py::arg( "limit" ),
+                         R"doc(Return a condition selecting rows where any residual component exceeds the supplied absolute limit.)doc" )
+            .def_static( "observation_absolute_value_greater_than",
+                         &tom::ObservationCondition< STATE_SCALAR_TYPE, TIME_TYPE >::observationAbsoluteValueGreaterThan,
+                         py::arg( "limit" ),
+                         R"doc(Return a condition selecting rows where any observation component exceeds the supplied absolute limit.)doc" )
+            .def_static( "dependent_variable_greater_than",
+                         &tom::ObservationCondition< STATE_SCALAR_TYPE, TIME_TYPE >::dependentVariableGreaterThan,
+                         py::arg( "dependent_variable_settings" ),
+                         py::arg( "limit" ),
+                         py::arg( "return_first_compatible_settings" ) = false,
+                         R"doc(Return a condition selecting rows where a compatible dependent-variable component exceeds the limit.)doc" )
+            .def(
+                    "__and__",
+                    []( const tom::ObservationCondition< STATE_SCALAR_TYPE, TIME_TYPE >& lhs,
+                        const tom::ObservationCondition< STATE_SCALAR_TYPE, TIME_TYPE >& rhs ) { return lhs && rhs; },
+                    py::is_operator( ),
+                    R"doc(Return the logical AND of two conditions.)doc" )
+            .def(
+                    "__or__",
+                    []( const tom::ObservationCondition< STATE_SCALAR_TYPE, TIME_TYPE >& lhs,
+                        const tom::ObservationCondition< STATE_SCALAR_TYPE, TIME_TYPE >& rhs ) { return lhs || rhs; },
+                    py::is_operator( ),
+                    R"doc(Return the logical OR of two conditions.)doc" )
+            .def(
+                    "__invert__",
+                    []( const tom::ObservationCondition< STATE_SCALAR_TYPE, TIME_TYPE >& condition ) { return !condition; },
+                    py::is_operator( ),
+                    R"doc(Return the logical negation of a condition.)doc" );
+
+    py::class_< tom::ObservationDatasetViewer< STATE_SCALAR_TYPE, TIME_TYPE > >( m,
+                                                                                 "ObservationDatasetViewer",
+                                                                                 R"doc(
+Read-only view on a selected subset of an ObservationDataset.
+
+The viewer stores observation row identifiers selected from a parent dataset and
+exposes only inspection and projection methods. It is invalidated if the parent
+dataset is structurally modified.
+)doc" )
+            .def_property_readonly( "number_of_observations",
+                                    &tom::ObservationDatasetViewer< STATE_SCALAR_TYPE, TIME_TYPE >::getNumberOfObservations,
+                                    R"doc(Number of selected observation rows.)doc" )
+            .def_property_readonly( "observation_ids",
+                                    &tom::ObservationDatasetViewer< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationIds,
+                                    R"doc(Selected observation row identifiers.)doc" )
+            .def( "observation_row",
+                  &tom::ObservationDatasetViewer< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationRow,
+                  py::arg( "viewer_index" ),
+                  R"doc(Return row metadata for one selected observation.)doc" )
+            .def( "observation_value",
+                  &tom::ObservationDatasetViewer< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationValue,
+                  py::arg( "viewer_index" ),
+                  R"doc(Return the vector-valued observation at the selected viewer index.)doc" )
+            .def( "observation_time",
+                  &tom::ObservationDatasetViewer< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationTime,
+                  py::arg( "viewer_index" ),
+                  R"doc(Return the observation time at the selected viewer index.)doc" )
+            .def( "create_viewer",
+                  &tom::ObservationDatasetViewer< STATE_SCALAR_TYPE, TIME_TYPE >::createViewer,
+                  py::keep_alive< 0, 1 >( ),
+                  py::arg( "condition" ),
+                  R"doc(Return a narrower read-only viewer selected from this viewer.)doc" )
+            .def( "estimation_vector_projection",
+                  &tom::ObservationDatasetViewer< STATE_SCALAR_TYPE, TIME_TYPE >::createEstimationProjection,
+                  py::arg( "include_rejected" ) = false,
+                  R"doc(Return a projection for this viewer. Rejected observations are excluded by default.)doc" )
+            .def( "legacy_vector_projection",
+                  &tom::ObservationDatasetViewer< STATE_SCALAR_TYPE, TIME_TYPE >::createLegacyProjection,
+                  py::arg( "include_inactive" ) = true,
+                  R"doc(Return a legacy projection for this viewer.)doc" );
+
+    py::class_< tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >,
+                std::shared_ptr< tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE > > >( m,
+                                                                                              "ObservationDataset",
+                                                                                              R"doc(
+Backend storage object for observation data.
+
+An ``ObservationDataset`` stores observation values, residuals, weights,
+dependent variables, set metadata and link/ancillary registries in a single
+dataset-centric representation. It is the new backend used by legacy
+``SingleObservationSet`` and ``ObservationCollection`` compatibility wrappers.
+)doc" )
+            .def( py::init<>( ), R"doc(Create an empty observation dataset.)doc" )
+            .def( "add_observation_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::addObservationSet,
+                  py::arg( "observable_type" ),
+                  py::arg( "link_definition" ),
+                  py::arg( "observations" ),
+                  py::arg( "times" ),
+                  py::arg( "reference_link_end" ),
+                  py::arg( "dependent_variables" ) = std::vector< Eigen::VectorXd >( ),
+                  py::arg( "dependent_variable_bookkeeping" ) = nullptr,
+                  py::arg( "ancillary_settings" ) = nullptr,
+                  py::arg( "weights" ) = std::vector< Eigen::Matrix< double, Eigen::Dynamic, 1 > >( ),
+                  py::arg( "residuals" ) = std::vector< Eigen::Matrix< STATE_SCALAR_TYPE, Eigen::Dynamic, 1 > >( ),
+                  py::arg( "sort_observations" ) = false,
+                  py::arg( "erase_duplicate_observations" ) = false,
+                  R"doc(
+Add a logical observation set and return its dataset set identifier.
+
+Parameters are equivalent to the legacy ``SingleObservationSet`` constructor,
+but the data are inserted directly into the dataset backend.
+)doc" )
+            .def( "add_observation_set_from_dataset",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::addObservationSetFromDataset,
+                  py::arg( "source_dataset" ),
+                  py::arg( "source_set_id" ),
+                  R"doc(Copy one observation set from another dataset and return the new set identifier.)doc" )
+            .def( "add_observation_set_with_scalar_weight",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::addObservationSetWithScalarWeight,
+                  py::arg( "observable_type" ),
+                  py::arg( "link_definition" ),
+                  py::arg( "observations" ),
+                  py::arg( "times" ),
+                  py::arg( "reference_link_end" ),
+                  py::arg( "weight" ),
+                  py::arg( "dependent_variables" ) = std::vector< Eigen::VectorXd >( ),
+                  py::arg( "dependent_variable_bookkeeping" ) = nullptr,
+                  py::arg( "ancillary_settings" ) = nullptr,
+                  py::arg( "residuals" ) = std::vector< Eigen::Matrix< STATE_SCALAR_TYPE, Eigen::Dynamic, 1 > >( ),
+                  R"doc(Add a set using one compact scalar weight for every observation.)doc" )
+            .def( "add_observation_set_with_scalar_weights",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::addObservationSetWithScalarWeights,
+                  py::arg( "observable_type" ),
+                  py::arg( "link_definition" ),
+                  py::arg( "observations" ),
+                  py::arg( "times" ),
+                  py::arg( "reference_link_end" ),
+                  py::arg( "weights" ),
+                  py::arg( "dependent_variables" ) = std::vector< Eigen::VectorXd >( ),
+                  py::arg( "dependent_variable_bookkeeping" ) = nullptr,
+                  py::arg( "ancillary_settings" ) = nullptr,
+                  py::arg( "residuals" ) = std::vector< Eigen::Matrix< STATE_SCALAR_TYPE, Eigen::Dynamic, 1 > >( ),
+                  R"doc(Add a set using one compact scalar weight per observation.)doc" )
+            .def( "add_observation_set_with_weight_block",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::addObservationSetWithWeightBlock,
+                  py::arg( "observable_type" ),
+                  py::arg( "link_definition" ),
+                  py::arg( "observations" ),
+                  py::arg( "times" ),
+                  py::arg( "reference_link_end" ),
+                  py::arg( "weight_block" ),
+                  py::arg( "dependent_variables" ) = std::vector< Eigen::VectorXd >( ),
+                  py::arg( "dependent_variable_bookkeeping" ) = nullptr,
+                  py::arg( "ancillary_settings" ) = nullptr,
+                  py::arg( "residuals" ) = std::vector< Eigen::Matrix< STATE_SCALAR_TYPE, Eigen::Dynamic, 1 > >( ),
+                  R"doc(Add a set using one observable-size weight block for every observation.)doc" )
+            .def( "add_observation_set_with_weight_blocks",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::addObservationSetWithWeightBlocks,
+                  py::arg( "observable_type" ),
+                  py::arg( "link_definition" ),
+                  py::arg( "observations" ),
+                  py::arg( "times" ),
+                  py::arg( "reference_link_end" ),
+                  py::arg( "weight_blocks" ),
+                  py::arg( "dependent_variables" ) = std::vector< Eigen::VectorXd >( ),
+                  py::arg( "dependent_variable_bookkeeping" ) = nullptr,
+                  py::arg( "ancillary_settings" ) = nullptr,
+                  py::arg( "residuals" ) = std::vector< Eigen::Matrix< STATE_SCALAR_TYPE, Eigen::Dynamic, 1 > >( ),
+                  R"doc(Add a set using one observable-size weight block per observation.)doc" )
+            .def( "add_observation_set_with_set_weight_block",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::addObservationSetWithSetWeightBlock,
+                  py::arg( "observable_type" ),
+                  py::arg( "link_definition" ),
+                  py::arg( "observations" ),
+                  py::arg( "times" ),
+                  py::arg( "reference_link_end" ),
+                  py::arg( "set_weight_block" ),
+                  py::arg( "dependent_variables" ) = std::vector< Eigen::VectorXd >( ),
+                  py::arg( "dependent_variable_bookkeeping" ) = nullptr,
+                  py::arg( "ancillary_settings" ) = nullptr,
+                  py::arg( "residuals" ) = std::vector< Eigen::Matrix< STATE_SCALAR_TYPE, Eigen::Dynamic, 1 > >( ),
+                  R"doc(Add a set using one full M x M set-level weight block.)doc" )
+            .def( "set_link_definition",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::setLinkDefinition,
+                  py::arg( "set_id" ),
+                  py::arg( "link_definition" ),
+                  R"doc(Replace the link definition associated with an observation set.)doc" )
+            .def( "set_observations_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::setObservationsForSet,
+                  py::arg( "set_id" ),
+                  py::arg( "observations" ),
+                  R"doc(Replace all observation vectors in a set.)doc" )
+            .def( "set_observation_vector_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::setObservationVectorForSet,
+                  py::arg( "set_id" ),
+                  py::arg( "observation_vector" ),
+                  R"doc(Replace all observations in a set from one concatenated vector.)doc" )
+            .def( "set_residuals_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::setResidualsForSet,
+                  py::arg( "set_id" ),
+                  py::arg( "residuals" ),
+                  R"doc(Replace all residual vectors in a set.)doc" )
+            .def( "set_residual_vector_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::setResidualVectorForSet,
+                  py::arg( "set_id" ),
+                  py::arg( "residual_vector" ),
+                  R"doc(Replace all residuals in a set from one concatenated vector.)doc" )
+            .def( "set_constant_weight_for_set",
+                  py::overload_cast< const tom::ObservationSetId, const double >(
+                          &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::setConstantWeightForSet ),
+                  py::arg( "set_id" ),
+                  py::arg( "weight" ),
+                  R"doc(Set the same scalar weight for every scalar component in an observation set.)doc" )
+            .def( "set_constant_weight_for_set",
+                  py::overload_cast< const tom::ObservationSetId, const Eigen::VectorXd& >(
+                          &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::setConstantWeightForSet ),
+                  py::arg( "set_id" ),
+                  py::arg( "weight" ),
+                  R"doc(Set the same component-wise weight vector for every observation in a set.)doc" )
+            .def( "set_weight_vector_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::setWeightVectorForSet,
+                  py::arg( "set_id" ),
+                  py::arg( "weight_vector" ),
+                  R"doc(Replace all weights in a set from one concatenated vector.)doc" )
+            .def( "set_weight_matrix_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::setWeightMatrixForSet,
+                  py::arg( "set_id" ),
+                  py::arg( "weight_matrix" ),
+                  R"doc(Store one full M x M weight matrix for an observation set.)doc" )
+            .def( "has_weight_matrix_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::hasWeightMatrixForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return whether a set has a stored full M x M weight matrix.)doc" )
+            .def( "set_weight_matrix_for_observation",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::setWeightMatrixForObservation,
+                  py::arg( "observation_id" ),
+                  py::arg( "weight_matrix" ),
+                  R"doc(Store one observable-size N x N weight matrix for a single observation.)doc" )
+            .def( "add_extra_weight_block",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::addExtraWeightBlock,
+                  py::arg( "weight_block" ),
+                  R"doc(Add an advanced dense off-diagonal weight block over selected scalar components.)doc" )
+            .def( "replace_observation_set_data",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::replaceObservationSetData,
+                  py::arg( "set_id" ),
+                  py::arg( "observations" ),
+                  py::arg( "times" ),
+                  py::arg( "dependent_variables" ) = std::vector< Eigen::VectorXd >( ),
+                  py::arg( "weights" ) = std::vector< Eigen::Matrix< double, Eigen::Dynamic, 1 > >( ),
+                  py::arg( "residuals" ) = std::vector< Eigen::Matrix< STATE_SCALAR_TYPE, Eigen::Dynamic, 1 > >( ),
+                  R"doc(Replace all row-level data for an existing observation set.)doc" )
+            .def( "add_observations_to_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::addObservationsToSet,
+                  py::arg( "set_id" ),
+                  py::arg( "observations" ),
+                  py::arg( "times" ),
+                  py::arg( "dependent_variables" ) = std::vector< Eigen::VectorXd >( ),
+                  py::arg( "weights" ) = std::vector< Eigen::Matrix< double, Eigen::Dynamic, 1 > >( ),
+                  py::arg( "residuals" ) = std::vector< Eigen::Matrix< STATE_SCALAR_TYPE, Eigen::Dynamic, 1 > >( ),
+                  py::arg( "sort_observations" ) = true,
+                  R"doc(Append observations to an existing set.)doc" )
+            .def( "remove_observations_from_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::removeObservationsFromSet,
+                  py::arg( "set_id" ),
+                  py::arg( "indices_to_remove" ),
+                  R"doc(Remove observations from a set by index within that set.)doc" )
+            .def( "remove_observation_from_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::removeObservationFromSet,
+                  py::arg( "set_id" ),
+                  py::arg( "index_to_remove" ),
+                  R"doc(Remove one observation from a set by index within that set.)doc" )
+            .def( "filtered_observation_indices",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getFilteredObservationIndices,
+                  py::arg( "set_id" ),
+                  py::arg( "observation_filter" ),
+                  R"doc(Return the indices selected by an observation filter for a given set.)doc" )
+            .def(
+                    "move_observations_to_set",
+                    []( tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >& dataset,
+                        const tom::ObservationSetId sourceSetId,
+                        const std::shared_ptr< tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE > >& targetDataset,
+                        const tom::ObservationSetId targetSetId,
+                        const std::vector< unsigned int >& indices,
+                        const bool removeFromSource ) {
+                        if( targetDataset == nullptr )
+                        {
+                            throw std::runtime_error( "Error when moving observations, target dataset is None." );
+                        }
+                        dataset.moveObservationsToSet( sourceSetId, *targetDataset, targetSetId, indices, removeFromSource );
+                    },
+                    py::arg( "source_set_id" ),
+                    py::arg( "target_dataset" ),
+                    py::arg( "target_set_id" ),
+                    py::arg( "indices" ),
+                    py::arg( "remove_from_source" ) = true,
+                    R"doc(Move or copy selected observations from one dataset set to another.)doc" )
+            .def( "time_bounds_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getTimeBoundsForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return the minimum and maximum observation time in a set.)doc" )
+            .def( "erase_duplicate_observations_from_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::eraseDuplicateObservationsFromSet,
+                  py::arg( "set_id" ),
+                  py::arg( "print_warning" ) = true,
+                  R"doc(Remove duplicate consecutive observation epochs from a set.)doc" )
+            .def( "computed_observations_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getComputedObservationsForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return computed observations, defined as observed values minus residuals.)doc" )
+            .def( "computed_observation_vector_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getComputedObservationVectorForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return computed observations for a set as one concatenated vector.)doc" )
+            .def( "rms_residuals_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getRmsResidualsForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return root-mean-square residuals per scalar component for a set.)doc" )
+            .def( "mean_residuals_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getMeanResidualsForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return mean residuals per scalar component for a set.)doc" )
+            .def_property_readonly( "number_of_observation_sets",
+                                    &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getNumberOfObservationSets,
+                                    R"doc(Number of logical observation sets stored in the dataset.)doc" )
+            .def_property_readonly( "number_of_observations",
+                                    &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getNumberOfObservations,
+                                    R"doc(Number of observation rows stored in the dataset.)doc" )
+            .def_property_readonly( "total_scalar_size",
+                                    &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getTotalScalarSize,
+                                    R"doc(Number of scalar observation components stored in the dataset.)doc" )
+            .def_property_readonly(
+                    "observation_set_metadata",
+                    py::overload_cast<>( &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationSetMetadata, py::const_ ),
+                    R"doc(List of metadata entries for all observation sets.)doc" )
+            .def( "get_observation_set_metadata",
+                  py::overload_cast< const tom::ObservationSetId >(
+                          &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationSetMetadata, py::const_ ),
+                  py::arg( "set_id" ),
+                  R"doc(Return metadata for one observation set.)doc" )
+            .def_property_readonly( "observation_rows",
+                                    &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationRows,
+                                    R"doc(Row metadata for all observations.)doc" )
+            .def( "observation_row",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationRow,
+                  py::arg( "observation_id" ),
+                  R"doc(Return row metadata for one observation.)doc" )
+            .def_property_readonly( "scalar_component_rows",
+                                    &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getScalarComponentRows,
+                                    R"doc(Row metadata for all scalar components.)doc" )
+            .def( "scalar_component_row",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getScalarComponentRow,
+                  py::arg( "scalar_component_id" ),
+                  R"doc(Return metadata for one scalar component.)doc" )
+            .def( "observation_ids_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationIdsForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return the observation row identifiers belonging to a set.)doc" )
+            .def( "observations_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationsForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return all observation vectors in a set.)doc" )
+            .def( "observation_vector_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationVectorForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return all observations in a set as one concatenated vector.)doc" )
+            .def( "observation_value",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationValue,
+                  py::arg( "observation_id" ),
+                  R"doc(Return the vector-valued observation for one observation row.)doc" )
+            .def( "observation_times_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationTimesForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return all observation times in a set.)doc" )
+            .def( "observation_time",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationTime,
+                  py::arg( "observation_id" ),
+                  R"doc(Return the time of one observation row.)doc" )
+            .def( "weights_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getWeightsForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return all weight vectors in a set.)doc" )
+            .def( "weight_vector_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getWeightVectorForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return all weights in a set as one concatenated vector.)doc" )
+            .def( "weight_matrix_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getWeightMatrixForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return the full weight matrix for a set, materializing compact weights if needed.)doc" )
+            .def( "weight_value",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getWeightValue,
+                  py::arg( "observation_id" ),
+                  R"doc(Return the weight vector for one observation row.)doc" )
+            .def( "weight_matrix_for_observation",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getWeightMatrixForObservation,
+                  py::arg( "observation_id" ),
+                  R"doc(Return the observable-size weight matrix for one observation row.)doc" )
+            .def( "residuals_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getResidualsForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return all residual vectors in a set.)doc" )
+            .def( "residual_vector_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getResidualVectorForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return all residuals in a set as one concatenated vector.)doc" )
+            .def( "residual_value",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getResidualValue,
+                  py::arg( "observation_id" ),
+                  R"doc(Return the residual vector for one observation row.)doc" )
+            .def( "dependent_variables_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getDependentVariablesForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return all dependent-variable vectors stored for a set.)doc" )
+            .def( "dependent_variables",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getDependentVariables,
+                  py::arg( "observation_id" ),
+                  R"doc(Return the dependent-variable vector for one observation row.)doc" )
+            .def( "single_dependent_variable_for_set",
+                  py::overload_cast< const tom::ObservationSetId,
+                                     const std::shared_ptr< tss::ObservationDependentVariableSettings >&,
+                                     const bool >(
+                          &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getSingleDependentVariableForSet, py::const_ ),
+                  py::arg( "set_id" ),
+                  py::arg( "dependent_variable_settings" ),
+                  py::arg( "return_first_compatible_settings" ) = false,
+                  R"doc(Return the values of one dependent variable stored for a set.)doc" )
+            .def( "single_dependent_variable_for_set_by_index",
+                  py::overload_cast< const tom::ObservationSetId, const std::pair< int, int >& >(
+                          &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getSingleDependentVariableForSet, py::const_ ),
+                  py::arg( "set_id" ),
+                  py::arg( "dependent_variable_index_and_size" ),
+                  R"doc(Return dependent-variable values by stored index and size.)doc" )
+            .def( "compatible_dependent_variable_settings_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getCompatibleDependentVariableSettingsForSet,
+                  py::arg( "set_id" ),
+                  py::arg( "dependent_variable_settings" ),
+                  R"doc(Return dependent-variable settings in a set compatible with the requested settings.)doc" )
+            .def( "all_compatible_dependent_variables_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getAllCompatibleDependentVariablesForSet,
+                  py::arg( "set_id" ),
+                  py::arg( "dependent_variable_settings" ),
+                  R"doc(Return all dependent-variable values in a set compatible with the requested settings.)doc" )
+            .def( "set_dependent_variables_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::setDependentVariablesForSet,
+                  py::arg( "set_id" ),
+                  py::arg( "dependent_variables" ),
+                  R"doc(Replace all dependent-variable vectors in a set.)doc" )
+            .def( "clear_dependent_variables_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::clearDependentVariablesForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Clear all dependent-variable vectors in a set.)doc" )
+            .def( "number_of_observations_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getNumberOfObservationsForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return the number of observation rows in a set.)doc" )
+            .def( "total_scalar_size_for_set",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getTotalScalarSizeForSet,
+                  py::arg( "set_id" ),
+                  R"doc(Return the number of scalar components in a set.)doc" )
+            .def( "link_definition",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getLinkDefinition,
+                  py::arg( "link_definition_id" ),
+                  R"doc(Return a link definition from the dataset registry.)doc" )
+            .def_property_readonly( "number_of_link_definitions",
+                                    &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getNumberOfLinkDefinitions,
+                                    R"doc(Number of unique link definitions registered in the dataset.)doc" )
+            .def( "ancillary_settings",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getAncillarySettings,
+                  py::arg( "ancillary_settings_id" ),
+                  R"doc(Return ancillary settings from the dataset registry.)doc" )
+            .def( "dependent_variable_bookkeeping",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getDependentVariableBookkeeping,
+                  py::arg( "dependent_variable_layout_id" ),
+                  R"doc(Return dependent-variable bookkeeping from the dataset registry.)doc" )
+            .def( "observation_set_ids",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationSetIds,
+                  py::arg( "observation_parser" ) = std::make_shared< tom::ObservationCollectionParser >( ),
+                  R"doc(Return observation set identifiers selected by an observation parser.)doc" )
+            .def( "observation_ids_matching_condition",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::getObservationIdsMatchingCondition,
+                  py::arg( "condition" ),
+                  R"doc(Return observation row identifiers selected by a row-level condition.)doc" )
+            .def( "create_viewer",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::createViewer,
+                  py::keep_alive< 0, 1 >( ),
+                  py::arg( "condition" ),
+                  R"doc(Return a read-only viewer over observations selected by a row-level condition.)doc" )
+            .def( "create_new_and_keep",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::createNewAndKeep,
+                  py::arg( "condition" ),
+                  R"doc(Return a new dataset containing only observations selected by a row-level condition.)doc" )
+            .def( "create_new_and_drop",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::createNewAndDrop,
+                  py::arg( "condition" ),
+                  R"doc(Return a new dataset excluding observations selected by a row-level condition.)doc" )
+            .def( "reject_observations",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::rejectObservations,
+                  py::arg( "condition" ),
+                  py::arg( "reason" ) = "",
+                  R"doc(Mark observations selected by a row-level condition as rejected without deleting them.)doc" )
+            .def( "restore_observations",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::restoreObservations,
+                  py::arg( "condition" ),
+                  R"doc(Restore observations selected by a row-level condition to active status.)doc" )
+            .def( "active_estimation_vector_projection",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::createEstimationProjection,
+                  py::arg( "include_rejected" ) = false,
+                  R"doc(Return an estimation projection. Rejected observations are excluded by default.)doc" )
+            .def( "legacy_vector_projection",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::createLegacyProjection,
+                  py::arg( "include_inactive" ) = true,
+                  R"doc(Return the legacy flat projection. Inactive/rejected observations are included by default.)doc" )
+            .def( "estimation_vector_projection",
+                  &tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >::createLegacyProjection,
+                  py::arg( "include_inactive" ) = true,
+                  R"doc(Return a flat estimation-vector projection of the dataset.)doc" );
+
+    m.def( "create_observation_dataset_from_single_observation_set",
+           static_cast< std::shared_ptr< tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE > > ( * )(
+                   const std::shared_ptr< tom::SingleObservationSet< STATE_SCALAR_TYPE, TIME_TYPE > >& ) >(
+                   &tom::createObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE > ),
+           py::arg( "observation_set" ),
+           R"doc(Return the dataset backend used by a legacy ``SingleObservationSet`` wrapper.)doc" );
+
+    m.def( "create_observation_dataset_from_collection",
+           py::overload_cast< const std::shared_ptr< tom::ObservationCollection< STATE_SCALAR_TYPE, TIME_TYPE > >& >(
+                   &tom::createObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE > ),
+           py::arg( "observation_collection" ),
+           R"doc(Return a dataset representation of a legacy ``ObservationCollection``.)doc" );
+
+    m.def( "create_single_observation_set_from_dataset",
+           static_cast< std::shared_ptr< tom::SingleObservationSet< STATE_SCALAR_TYPE, TIME_TYPE > > ( * )(
+                   const std::shared_ptr< tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE > >&, const tom::ObservationSetId ) >(
+                   &tom::createSingleObservationSet< STATE_SCALAR_TYPE, TIME_TYPE > ),
+           py::arg( "observation_dataset" ),
+           py::arg( "set_id" ) = 0,
+           R"doc(Create a legacy ``SingleObservationSet`` wrapper around one dataset set.)doc" );
+
+    m.def( "create_observation_collection_from_dataset",
+           &tom::createObservationCollection< STATE_SCALAR_TYPE, TIME_TYPE >,
+           py::arg( "observation_dataset" ),
+           R"doc(Create a legacy ``ObservationCollection`` wrapper around a dataset.)doc" );
 
     // SINGLE OBSERVATION SET
 
@@ -1803,7 +2511,10 @@ residuals_per_parser : dict[ObservationCollectionParser, np.ndarray]
      )doc" );
 
     m.def( "compute_residuals_and_dependent_variables",
-           &tss::computeResidualsAndDependentVariables< STATE_SCALAR_TYPE, TIME_TYPE >,
+           static_cast< void ( * )( std::shared_ptr< tom::ObservationCollection< STATE_SCALAR_TYPE, TIME_TYPE > >,
+                                    const std::vector< std::shared_ptr< tom::ObservationSimulatorBase< STATE_SCALAR_TYPE, TIME_TYPE > > >&,
+                                    const tss::SystemOfBodies& ) >(
+                   &tss::computeResidualsAndDependentVariables< STATE_SCALAR_TYPE, TIME_TYPE > ),
            py::arg( "observation_collection" ),
            py::arg( "observation_simulators" ),
            py::arg( "bodies" ),
@@ -1824,6 +2535,68 @@ residuals_per_parser : dict[ObservationCollectionParser, np.ndarray]
             List of observation simulators to be used for computing the observations.
         bodies : tudatpy.dynamics.environment.SystemOfBodies
             The system of bodies required for the observation simulation.
+        )doc" );
+
+    m.def( "observation_simulation_settings_from_dataset",
+           &tss::getObservationSimulationSettingsFromObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE >,
+           py::arg( "observation_dataset" ),
+           py::arg( "bodies" ),
+           R"doc(
+        Create observation simulation settings from a dataset.
+
+        The returned settings reproduce the observable type, link definition,
+        observation epochs, reference link end, ancillary settings and dependent
+        variable bookkeeping stored in each set of the dataset. They can be
+        passed to :func:`tudatpy.estimation.observations_setup.observations_wrapper.simulate_observation_dataset`.
+
+        Parameters
+        ----------
+        observation_dataset : tudatpy.estimation.observations.ObservationDataset
+            Dataset from which simulation settings should be reconstructed.
+        bodies : tudatpy.dynamics.environment.SystemOfBodies
+            System of bodies used for consistency with observation-dependent
+            variable setup.
+
+        Returns
+        -------
+        list[tudatpy.estimation.observations_setup.observations_simulation_settings.ObservationSimulationSettings]
+            Simulation settings matching the dataset observation sets.
+        )doc" );
+
+    m.def(
+            "compute_residuals_and_dependent_variables_for_dataset",
+            []( const std::shared_ptr< tom::ObservationDataset< STATE_SCALAR_TYPE, TIME_TYPE > >& observationDataset,
+                const std::vector< std::shared_ptr< tom::ObservationSimulatorBase< STATE_SCALAR_TYPE, TIME_TYPE > > >&
+                        observationSimulators,
+                const tss::SystemOfBodies& bodies ) {
+                if( observationDataset == nullptr )
+                {
+                    throw std::runtime_error(
+                            "Error when computing residuals and dependent variables for dataset, input dataset is None." );
+                }
+                tss::computeResidualsAndDependentVariables< STATE_SCALAR_TYPE, TIME_TYPE >(
+                        observationDataset, observationSimulators, bodies );
+            },
+            py::arg( "observation_dataset" ),
+            py::arg( "observation_simulators" ),
+            py::arg( "bodies" ),
+            R"doc(
+        Compute residuals and dependent variables for a dataset in-place.
+
+        This is the dataset-backed counterpart of
+        :func:`compute_residuals_and_dependent_variables`. Residuals and
+        dependent variables are written back into the supplied
+        :class:`ObservationDataset`.
+
+        Parameters
+        ----------
+        observation_dataset : tudatpy.estimation.observations.ObservationDataset
+            Dataset containing observed values and metadata. This object is
+            modified in-place.
+        observation_simulators : list[tudatpy.estimation.observable_models.observables_simulation.ObservationSimulator]
+            Observation simulators used to compute modeled values.
+        bodies : tudatpy.dynamics.environment.SystemOfBodies
+            System of bodies required for observation simulation.
         )doc" );
 
     m.def( "filter_observations",
